@@ -1,0 +1,25 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install flake8 pytest
+  pre_build:
+    commands:
+      - test -n "$ECR_URI" || (echo "ECR_URI must be configured" && exit 1)
+      - export AWS_DEFAULT_REGION=ap-south-1
+      - export IMAGE_TAG="$CODEBUILD_RESOLVED_SOURCE_VERSION"
+      - aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin "$(echo "$ECR_URI" | cut -d/ -f1)"
+  build:
+    commands:
+      - flake8 app.py test_app.py
+      - pytest
+      - docker build -t "$ECR_URI:$IMAGE_TAG" .
+      - docker tag "$ECR_URI:$IMAGE_TAG" "$ECR_URI:latest"
+  post_build:
+    commands:
+      - if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then echo "Build failed; skipping ECR push"; exit 1; fi
+      - docker push "$ECR_URI:$IMAGE_TAG"
+      - docker push "$ECR_URI:latest"
